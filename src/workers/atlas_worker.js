@@ -10,6 +10,7 @@ This Source Code Form is “Incompatible With Secondary Licenses”, as defined 
 import PeriodicWorker from './periodic_worker';
 import AtlasChallengeParticipationStrategy from './atlas_strategies/atlas_challenge_resolution_strategy';
 import {getTimestamp} from '../utils/time_utils';
+import {getBalance, maximalGasPrice} from '../utils/web3_tools';
 
 export default class AtlasWorker extends PeriodicWorker {
   constructor(web3, dataModelEngine, workerLogRepository, challengesRepository, strategy, logger) {
@@ -36,6 +37,10 @@ export default class AtlasWorker extends PeriodicWorker {
   }
 
   async periodicWork() {
+    if (!await this.checkIfEnoughFundsToPayForGas()) {
+      await this.addLog('Not enough funds to pay for gas');
+      return;
+    }
     const challenges = await this.challengesRepository.ongoingChallenges();
     for (const challenge of challenges) {
       try {
@@ -55,6 +60,10 @@ export default class AtlasWorker extends PeriodicWorker {
       }
     }
     await this.dataModelEngine.cleanupBundles();
+  }
+
+  async checkIfEnoughFundsToPayForGas() {
+    return (await getBalance(this.web3)).gt(maximalGasPrice());
   }
 
   async addLog(message, additionalFields, stacktrace) {

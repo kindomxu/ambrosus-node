@@ -20,6 +20,7 @@ const {expect} = chai;
 
 describe('Atlas Worker', () => {
   const defaultAccount = '0x123';
+  const exampleBalance = '10000000000000000000';
   const fetchedBundle = {bundleId: 'fetchedBundle'};
   const workerInterval = 10;
   let atlasWorker;
@@ -35,7 +36,8 @@ describe('Atlas Worker', () => {
   beforeEach(() => {
     mockWeb3 = {
       eth: {
-        defaultAccount
+        defaultAccount,
+        getBalance: sinon.stub().resolves(exampleBalance)
       }
     };
     challengesRepositoryMock = {
@@ -112,6 +114,12 @@ describe('Atlas Worker', () => {
     it('periodicWork does not throw when tryToResolve fails', async () => {
       dataModelEngineMock.downloadBundle.rejects();
       await expect(atlasWorker.periodicWork()).to.be.eventually.fulfilled;
+    });
+
+    it('periodicWork does not do anything when not enough balance to pay for the gas', async () => {
+      mockWeb3.eth.getBalance.resolves('10');
+      await expect(atlasWorker.periodicWork()).to.be.eventually.fulfilled;
+      await expect(challengesRepositoryMock.ongoingChallenges).to.be.not.called;
     });
   });
 });
