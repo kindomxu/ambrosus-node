@@ -139,10 +139,15 @@ export async function waitForChainSync(web3, timeoutInSeconds, iterationCallback
 }
 
 export async function getBalance(web3, address) {
-  return new BN(await web3.eth.getBalance(address));
+  return await web3.eth.getBalance(address);
 }
 
 export function maximalGasPrice() {
-  const GAS_LIMIT = '8000000';
-  return new BN(GAS_LIMIT).mul(new Web3().utils.toWei(new BN(config.defaultGasPrice), 'gwei'));
+  return new BN(DEFAULT_GAS).mul(new Web3().utils.toWei(new BN(config.defaultGasPrice), 'gwei'))
+    .toString();
 }
+
+export async function checkIfEnoughFundsToPayForGas(web3, address) {
+  return new BN(await getBalance(web3, address)).gte(new BN(maximalGasPrice()));
+}
+
