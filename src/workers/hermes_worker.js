@@ -10,22 +10,34 @@ This Source Code Form is “Incompatible With Secondary Licenses”, as defined 
 import PeriodicWorker from './periodic_worker';
 import HermesUploadStrategy from './hermes_strategies/upload_strategy';
 
+const HERMES_BUNDLING_WORK_NAME = 'HermesBundling';
 
 export default class HermesWorker extends PeriodicWorker {
-  constructor(dataModelEngine, workerLogRepository, strategy, logger) {
+  constructor(dataModelEngine, workerLogRepository, workerTaskTrackingRepository, strategy, logger) {
     super(strategy.workerInterval, logger);
     this.dataModelEngine = dataModelEngine;
     this.bundleSequenceNumber = 0;
+    this.workerTaskTrackingRepository = workerTaskTrackingRepository;
     this.strategy = strategy;
     this.workerLogRepository = workerLogRepository;
+    this.workId = null;
     if (!(this.strategy instanceof HermesUploadStrategy)) {
       throw new Error('A valid strategy must be provided');
     }
   }
 
   async periodicWork() {
-    await this.bundleCandidates();
-    await this.uploadWaitingCandidates();
+    this.workId = await this.workerTaskTrackingRepository.tryToBeginWork(HERMES_BUNDLING_WORK_NAME);
+    try {
+      await this.bundleCandidates();
+      await this.uploadWaitingCandidates();
+    } finally {
+      await this.workerTaskTrackingRepository.finishWork(this.workId);
+    }
+  }
+
+  async afterWorkLoop() {
+    await this.workerTaskTrackingRepository.finishWork(this.workId);
   }
 
   async bundleCandidates() {

@@ -9,17 +9,21 @@ This Source Code Form is “Incompatible With Secondary Licenses”, as defined 
 
 import chai from 'chai';
 import sinon from 'sinon';
-import HermesWorker from '../../src/workers/hermes_worker';
 import sinonChai from 'sinon-chai';
+import chaiAsPromissed from 'chai-as-promised';
+import HermesWorker from '../../src/workers/hermes_worker';
 import HermesUploadStrategy from '../../src/workers/hermes_strategies/upload_strategy';
 
 chai.use(sinonChai);
+chai.use(chaiAsPromissed);
 const {expect} = chai;
 
 describe('Hermes Worker', () => {
   const storagePeriods = 1;
+  const exampleWorkId = 'workid';
   let mockDataModelEngine;
   let mockWorkerLogRepository;
+  let mockWorkerTaskTrackingRepository;
   let mockLogger;
   let mockStrategy;
   let mockResult;
@@ -39,6 +43,10 @@ describe('Hermes Worker', () => {
         failed: {}
       })
     };
+    mockWorkerTaskTrackingRepository = {
+      tryToBeginWork: sinon.stub().resolves(exampleWorkId),
+      finishWork: sinon.spy()
+    };
     mockWorkerLogRepository = {
       storeLog: sinon.stub()
     };
@@ -48,7 +56,7 @@ describe('Hermes Worker', () => {
     };
     mockStrategy = sinon.createStubInstance(HermesUploadStrategy);
 
-    hermesWorker = new HermesWorker(mockDataModelEngine, mockWorkerLogRepository, mockStrategy, mockLogger);
+    hermesWorker = new HermesWorker(mockDataModelEngine, mockWorkerLogRepository, mockWorkerTaskTrackingRepository, mockStrategy, mockLogger);
     await hermesWorker.beforeWorkLoop();
 
     ({bundleSequenceNumber} = hermesWorker);
@@ -112,6 +120,28 @@ describe('Hermes Worker', () => {
     it('is requested', async () => {
       await hermesWorker.periodicWork();
       expect(mockDataModelEngine.uploadAcceptedBundleCandidates).to.have.been.calledOnce;
+    });
+  });
+
+  describe('Task tracking', () => {
+    it('bundling process starts and ends HermesBundling task', async () => {
+      await hermesWorker.periodicWork();
+      expect(mockWorkerTaskTrackingRepository.tryToBeginWork).to.be.calledBefore(mockDataModelEngine.prepareBundleCandidate);
+      expect(mockWorkerTaskTrackingRepository.tryToBeginWork).to.be.calledOnceWith('HermesBundling');
+      expect(mockWorkerTaskTrackingRepository.finishWork).to.be.calledAfter(mockDataModelEngine.uploadAcceptedBundleCandidates);
+      expect(mockWorkerTaskTrackingRepository.finishWork).to.be.calledOnceWith(exampleWorkId);
+    });
+
+    it('should end task in every work loop even if error was thrown', async () => {
+      mockDataModelEngine.prepareBundleCandidate.rejects();
+      await expect(hermesWorker.periodicWork()).to.be.rejected;
+      expect(mockWorkerTaskTrackingRepository.finishWork).to.be.calledOnceWith(exampleWorkId);
+    });
+
+    it('After work: should remove all running tasks', async () => {
+      hermesWorker.workId = exampleWorkId;
+      await hermesWorker.afterWorkLoop();
+      expect(mockWorkerTaskTrackingRepository.finishWork).to.be.calledOnceWith(exampleWorkId);
     });
   });
 });
